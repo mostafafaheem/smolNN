@@ -48,7 +48,7 @@ activation_menu = ttk.OptionMenu(hyper_parameters_frame, activation_var, "sigmoi
 activation_menu.grid(row=5, column=1, padx=10, pady=5, sticky="ew")
 
 def on_train_click():
-    global trained_model, scaler_stats
+    global trained_model, scaler_stats, saved_cat_mappings
     
     try:
         #parsing inputs
@@ -117,15 +117,20 @@ cm_button.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
 #classification frame
 classify_frame = ttk.LabelFrame(root, text="5. Classify New Sample", padding=(10, 5))
 classify_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+feature_names = ["Culmen Length", "Culmen Depth", "Flipper Length", "Body Mass", "Origin_Location"]
+origin_options = ["Biscoe", "Dream", "Torgersen"]
 feature_entry_widgets = []
-feature_names = ["Culmen Length", "Culmen Depth", "Flipper Length", "Origin_Location", "Body Mass"]
 
-for i in range(5):
-    # Try to name them nicely if possible, else Feature i
-    label_text = feature_names[i] if i < len(feature_names) else f"Feature {i+1}"
-    ttk.Label(classify_frame, text=f"{label_text}:").grid(row=i, column=0, padx=10, pady=5, sticky="w")
-    entry = ttk.Entry(classify_frame)
-    entry.insert(0, "0.0")
+for i, name in enumerate(feature_names):
+    ttk.Label(classify_frame, text=f"{name}:").grid(row=i, column=0, padx=10, pady=5, sticky="w")
+    if name == "Origin_Location":
+        #dropdown
+        entry = ttk.Combobox(classify_frame, values=origin_options, state="readonly")
+        entry.current(0) # Default to "Biscoe" (the first item)
+    else:
+        entry = ttk.Entry(classify_frame)
+        entry.insert(0, "0.0")
+
     entry.grid(row=i, column=1, padx=10, pady=5)
     feature_entry_widgets.append(entry)
 
@@ -137,65 +142,76 @@ def on_classify_click():
         return
 
     try:
-        # 1. READ RAW INPUTS
-        # [Length, Depth, Flipper, Origin, Mass]
-        raw_L = float(feature_entry_widgets[0].get())
-        raw_D = float(feature_entry_widgets[1].get())
-        raw_F = float(feature_entry_widgets[2].get())
-        raw_Origin = feature_entry_widgets[3].get() # e.g., "Dream"
-        raw_M = float(feature_entry_widgets[4].get())
+        # --- 1. GET RAW INPUTS SEPARATELY ---
+        # We cannot use a loop because data types are different
+        
+        # Widgets 0, 1, 2, 3 are Numbers (Float)
+        raw_L = float(feature_entry_widgets[0].get()) # Culmen Length
+        raw_D = float(feature_entry_widgets[1].get()) # Culmen Depth
+        raw_F = float(feature_entry_widgets[2].get()) # Flipper Length
+        raw_M = float(feature_entry_widgets[3].get()) # Body Mass
+        
+        # Widget 4 is Text (String) - DO NOT convert to float
+        raw_Origin = feature_entry_widgets[4].get()   # Origin Location
 
-        # 2. SCALE NUMERICALS (Same as before)
+        # --- 2. SCALE NUMERICAL DATA ---
+        # Retrieve stats from training
         mean = scaler_stats['mean'] 
         std = scaler_stats['std']
         
-        # Assume backend order: [L, D, F, M] -> Indices 0, 1, 2, 3
+        # Apply (x - u) / s
+        # Indices here must match the order of columns in your backend X_train
         scaled_L = (raw_L - mean[0]) / std[0]
         scaled_D = (raw_D - mean[1]) / std[1]
         scaled_F = (raw_F - mean[2]) / std[2]
         scaled_M = (raw_M - mean[3]) / std[3]
 
-        # 3. ENCODE CATEGORICAL (DYNAMICALLY)
-        # Retrieve the order found during training (e.g. ['Torgersen', 'Dream', 'Biscoe'])
-        origin_order_list = saved_cat_mappings['OriginLocation']
-        # Create a zero vector size of how many origins we have
-        origin_one_hot = [0] * len(origin_order_list)
+        # --- 3. ENCODE CATEGORICAL DATA ---
+        # Retrieve the list of origins found during training (e.g. ['Biscoe', 'Dream', 'Torgersen'])
+        # This ensures we match the exact One-Hot order the model learned
+        if 'OriginLocation' not in saved_cat_mappings:
+             raise ValueError("Mapping missing. Did you restart without training?")
+             
+        origin_order = saved_cat_mappings['OriginLocation']
         
-        # Find where the user's choice lives in that list
-        if raw_Origin in origin_order_list:
-            # NumPy/Pandas unique() returns an ndarray, so we use np.where or convert to list
-            idx = list(origin_order_list).index(raw_Origin)
+        # Create a vector of zeros (e.g., [0, 0, 0])
+        origin_one_hot = [0] * len(origin_order)
+        
+        # Find which index matches the user's choice and flip it to 1
+        if raw_Origin in origin_order:
+            # list() is needed if origin_order is a numpy array
+            idx = list(origin_order).index(raw_Origin)
             origin_one_hot[idx] = 1
         else:
-            # Fallback if user selected something weird or list is empty
-            #pass
-            messagebox.showwarning("Warning", f"Unknown location: {raw_Origin}") 
+            # If for some reason the dropdown has a value not in training data
+            messagebox.showwarning("Warning", f"Location '{raw_Origin}' was never seen during training.")
 
-        # 4. ASSEMBLE
-        # [Numericals] + [One-Hots]
-        # Note: Ensure Mass is inserted in correct spot if needed, or append at end
-        # Based on your backend loop, numericals usually come first in X unless columns were reordered.
-        # If you used `df[numerical_cols] = ...` and then `encoded_df = df.copy()`, 
-        # the numerical columns are usually on the LEFT and new encoded columns added to the RIGHT.
-        
+        # --- 4. ASSEMBLE FINAL VECTOR ---
+        # Combine [Scaled Numbers] + [One Hot Vector]
         final_input_list = [scaled_L, scaled_D, scaled_F, scaled_M] + origin_one_hot
         
+        # Reshape for the network
         sample_vector = np.array(final_input_list).reshape(1, -1)
 
-        # 5. PREDICT
+        # --- 5. PREDICT ---
         activations = trained_model.forward(sample_vector)
         final_probs = activations[-1]
         predicted_index = np.argmax(final_probs)
         
-        # Map index to class name
-        # We can also use the Saved Species Mapping to be 100% safe!
-        species_order = saved_cat_mappings['Species']
-        result_text = species_order[predicted_index]
+        # Get Class Name
+        # Use the 'Species' mapping from backend if available, else hardcode
+        if 'Species' in saved_cat_mappings:
+            species_list = saved_cat_mappings['Species']
+            result_text = species_list[predicted_index]
+        else:
+            result_text = f"Class {predicted_index}"
             
         classification_result.set(result_text)
 
+    except ValueError as e:
+        messagebox.showerror("Input Error", f"Please check your inputs.\nDetails: {e}")
     except Exception as e:
-        messagebox.showerror("Prediction Error", str(e))
+        messagebox.showerror("Error", str(e))
 
 classify_button = ttk.Button(classify_frame, text="Predict Class", command=on_classify_click)
 classify_button.grid(row=5, column=0, columnspan=2, pady=10)
