@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-import tkinter as tk
-from tkinter import ttk, messagebox
+import itertools
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 class NeuralNetwork:
     def __init__(self, layers, learning_rate, use_bias, activation_fn):
@@ -254,7 +255,6 @@ def load_and_preprocess_data():
 
     #One-Hot encoding
     encoded_df = df.copy()
-    # --- DICTIONARY TO SAVE THE EXACT ORDER ---
     cat_mappings = {} 
     for col in categorical_cols:
         unique_values = df[col].dropna().unique()
@@ -294,171 +294,170 @@ def scale_data(X_train, X_test):
     X_test[:, numerical_indices] = (X_test[:, numerical_indices] - mean) / std
     return X_train, X_test, numerical_indices, mean, std
 
-# if __name__ == "__main__":
+#from scratch confusion matrix
+def confusion_matrix_manual(y_true, y_pred):
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    classes = np.unique(np.concatenate((y_true, y_pred)))
+    n_classes = len(classes)
+    cm = np.zeros((n_classes, n_classes), dtype=int)
+    for i in range(len(y_true)):
+        actual = np.where(classes == y_true[i])[0][0]
+        pred = np.where(classes == y_pred[i])[0][0]
+        cm[actual, pred] += 1
+        
+    return cm, classes
 
-#     #processed X train and test
-#     X_train, X_test = scale_numerical_only(X_train, X_test)
+def plot_manual_cm_graphic(cm, classes, title, class_names_map=None):
+    fig, ax = plt.subplots(figsize=(6, 5))
+    im = ax.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    ax.figure.colorbar(im, ax=ax)
+    if class_names_map is not None:
+        tick_labels = [class_names_map[int(c)] if int(c) < len(class_names_map) else str(c) for c in classes]
+    else:
+        tick_labels = classes
 
-#     input_size = X.shape[1]
-#     hidden_size = 8
-#     output_size = y.shape[1]
+    ax.set(xticks=np.arange(cm.shape[1]),
+           yticks=np.arange(cm.shape[0]),
+           xticklabels=tick_labels, 
+           yticklabels=tick_labels,
+           title=title,
+           ylabel='True Label',
+           xlabel='Predicted Label')
+
+    thresh = cm.max() / 2.
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, format(cm[i, j], 'd'),
+                    ha="center", va="center",
+                    color="white" if cm[i, j] > thresh else "black")
     
-#     nn = NeuralNetwork(
-#         layers=[input_size, hidden_size, output_size],
-#         learning_rate=0.01,
-#         use_bias=True,
-#         activation_fn='sigmoid'
-#     )
+    plt.tight_layout()
+    plt.show()
 
-#     nn.train_adam(X_train, y_train, epochs=1000)
-#     accuracy = nn.evaluate(X_test, y_test)
-#     print(f"\nTraining Accuracy: {accuracy:.4f}")
-    
-#     # Make predictions
-#     # predictions = nn.predict(y_train.iloc[30])
-#     probabilities = nn.predict_proba(X_test)   
-#     print(probabilities) 
-#     # print("Neural Network class ready to use!")
+#gridsearch
+def run_grid_search_and_plot():
+    print("Preparing Data for Grid Search...")
+    X_train, X_test, y_train, y_test, mappings = load_and_preprocess_data()
+    species_names = mappings['Species'].tolist()
+    X_train, X_test, _, _, _ = scale_data(X_train, X_test)
+    species_names = mappings.get('Species', ["0", "1", "2"])
+    input_size = X_train.shape[1]
+    output_size = y_train.shape[1]
+    activations = ['sigmoid', 'tanh']
+    learning_rates = [0.01, 0.001]
+    epochs_list = [500, 1000]
+    hidden_layers_configs = [[5], [8], [5, 4], [8, 8]] 
+    best_results = []
 
+    print(f"{'='*60}")
+    print(f"STARTING GRID SEARCH")
+    print(f"{'='*60}")
 
+    for act in activations:
+        print(f"\n--- Searching best parameters for: {act.upper()} ---")
+        
+        best_acc_for_act = -1
+        best_params_for_act = {}
+        best_model_for_act = None 
 
+        for lr in learning_rates:
+            for epochs in epochs_list:
+                for hidden_conf in hidden_layers_configs:
+                    
+                    full_layers = [input_size] + hidden_conf + [output_size]
 
+                    nn = NeuralNetwork(
+                        layers=full_layers,
+                        learning_rate=lr,
+                        use_bias=True,
+                        activation_fn=act
+                    )
 
+                    nn.train_adam(X_train, y_train, epochs=epochs, print_every=epochs + 1)
+                    test_acc = nn.evaluate(X_test, y_test)
+                    train_acc = nn.evaluate(X_train, y_train)
+                    if test_acc > best_acc_for_act:
+                        best_acc_for_act = test_acc
+                        best_model_for_act = nn 
+                        best_params_for_act = {
+                            "Activation Function": act,
+                            "Train Accuracy": f"{train_acc*100:.2f}%",
+                            "Test Accuracy": f"{test_acc*100:.2f}%",
+                            "LR": lr,
+                            "Epochs": epochs,
+                            "#Layers": len(hidden_conf),
+                            "#HiddenNodes": str(hidden_conf)
+                        }
+        
+        print(f"Best {act} model found. Accuracy: {best_params_for_act['Test Accuracy']}")
+        best_results.append(best_params_for_act)
+        
+        #from scratch confusion matrix
+        y_pred = best_model_for_act.predict(X_test)
+        if y_test.ndim > 1 and y_test.shape[1] > 1:
+            y_true = np.argmax(y_test, axis=1)
+        else:
+            y_true = y_test
+            
+        cm, classes_found = confusion_matrix_manual(y_true, y_pred)
+        plot_manual_cm_graphic(cm, classes_found, f"Best Confusion Matrix ({act})", class_names_map=species_names)
 
+    print(f"\n{'='*60}")
+    print("GRID SEARCH COMPLETE. BEST RESULTS:")
+    print(f"{'='*60}")
+    for res in best_results:
+        print(res)
 
+    plot_results_table(best_results)
 
+def plot_results_table(data):
+    df = pd.DataFrame(data)
+    cols = ["Activation Function", "Train Accuracy", "Test Accuracy", "LR", "Epochs", "#Layers", "#HiddenNodes"]
+    df = df[cols]
+    fig, ax = plt.subplots(figsize=(12, 3)) 
+    ax.axis('off')
+    table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center', colColours=["#f2f2f2"] * len(df.columns))
+    table.auto_set_font_size(False)
+    table.set_fontsize(11)
+    table.scale(1, 2)
+    plt.title("Best Model Parameters per Activation Function", fontsize=14, weight='bold')
+    plt.show()
 
-
-
-
-
-
-
-
-
-# #interface:
-# features = df.drop(columns='Species', axis=1)
-# label = df['Species']
-
-# root = tk.Tk()
-# root.title("Backpropagation Algorithm")
-# root.geometry("950x600")
-
-# root.columnconfigure(0, weight=1)
-# root.columnconfigure(1, weight=1)
-# root.rowconfigure(0, weight=1)
-
-# hyper_parameters_frame = ttk.LabelFrame(root, text="1. User Input", padding=(10, 5))
-# hyper_parameters_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-
-# ttk.Label(hyper_parameters_frame, text="Number of hidden layers:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
-# hidden_layers_entry = ttk.Entry(hyper_parameters_frame)
-# hidden_layers_entry.insert(0, "2") #default value
-# hidden_layers_entry.grid(row=0, column=1, padx=10, pady=5)
-
-# #note: Since there are multiple layers, we usually enter this as a comma-separated list
-# ttk.Label(hyper_parameters_frame, text="Neurons in each layer (e.g. 5,4):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
-# neurons_entry = ttk.Entry(hyper_parameters_frame)
-# neurons_entry.insert(0, "5, 4") #default values for 2 layers
-# neurons_entry.grid(row=1, column=1, padx=10, pady=5)
-
-# ttk.Label(hyper_parameters_frame, text="Learning Rate (eta):").grid(row=2, column=0, padx=10, pady=5, sticky="w")
-# lr_entry = ttk.Entry(hyper_parameters_frame)
-# lr_entry.insert(0, "0.01")
-# lr_entry.grid(row=2, column=1, padx=10, pady=5)
-
-# ttk.Label(hyper_parameters_frame, text="Epochs (m):").grid(row=3, column=0, padx=10, pady=5, sticky="w")
-# epochs_entry = ttk.Entry(hyper_parameters_frame)
-# epochs_entry.insert(0, "100")
-# epochs_entry.grid(row=3, column=1, padx=10, pady=5)
-
-# #checkbox
-# bias_var = tk.BooleanVar(value=True)
-# ttk.Checkbutton(hyper_parameters_frame, text="Include Bias", variable=bias_var).grid(row=4, column=0, columnspan=2, pady=5)
-
-# #smart variable
-# ttk.Label(hyper_parameters_frame, text="Activation Function:").grid(row=5, column=0, padx=10, pady=5, sticky="w")
-# activation_var = tk.StringVar(value="Sigmoid")
-
-# #the dropdown
-# activation_menu = ttk.OptionMenu(
-#     hyper_parameters_frame, 
-#     activation_var, 
-#     "Sigmoid",            #default value to show
-#     "Sigmoid",            #option 1
-#     "Hyperbolic Tangent"  #option 2
-# )
-# activation_menu.grid(row=5, column=1, padx=10, pady=5, sticky="ew")
-
-# #eval frame
-# model_evaluation = ttk.LabelFrame(root, text="4. Model Evaluation", padding=(10, 5))
-# model_evaluation.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-
-# Training_result = tk.StringVar(value="N/A")
-# testing_result  = tk.StringVar(value="N/A")
-
-# ttk.Label(model_evaluation, text="Training Accuracy:").grid(row=0, column=0, padx=10, pady=5, sticky="w")
-# ttk.Label(model_evaluation, textvariable=Training_result, foreground="blue").grid(row=0, column=1, padx=10, pady=5, sticky="w")
-
-# ttk.Label(model_evaluation, text="Testing Accuracy:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
-# ttk.Label(model_evaluation, textvariable=testing_result, foreground="blue").grid(row=1, column=1, padx=10, pady=5, sticky="w")
-
-# # Confusion Matrix Button (New!)
-# # This button will trigger the plotting function you imported earlier - to be added
-# cm_button = ttk.Button(model_evaluation, text="Show Confusion Matrix", command=lambda: print("Link this to your plot_cm function")) 
-# cm_button.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
-
-# #new sample frame
-# classify_frame = ttk.LabelFrame(root, text="5. Classify New Sample", padding=(10, 5))
-# classify_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
-
-# #list to store the entry widgets so we can read them later
-# feature_entry_widgets = []
-
-# #5 input fields
-# for i in range(5):
-#     ttk.Label(classify_frame, text=f"Feature {i+1}:").grid(row=i, column=0, padx=10, pady=5, sticky="w")
-    
-#     entry = ttk.Entry(classify_frame)
-#     entry.insert(0, "0.0") #default value
-#     entry.grid(row=i, column=1, padx=10, pady=5)
-#     feature_entry_widgets.append(entry)
-
-# classification_result = tk.StringVar(value="Not classified yet")
-
-# # --- Prediction Logic Helper ---
-# def on_classify_click():
+# def visualize_separability():
+#     print("Loading data for visualization...")
 #     try:
-#         # 1. Loop through the 5 widgets and get the numbers
-#         user_inputs = []
-#         for entry in feature_entry_widgets:
-#             val = float(entry.get())
-#             user_inputs.append(val)
-        
-#         # 2. Convert to NumPy array (Shape: 1 row, 5 cols)
-#         sample_vector = np.array(user_inputs).reshape(1, -1)
-        
-#         # 3. Run prediction (Assume 'nn' is your trained NeuralNetwork instance)
-#         #preprocess this sample YA MARIAM
-#         activations = nn.forward(sample_vector)
-#         final_probs = activations[-1] # This will be an array like [[0.1, 0.8, 0.1]]
-        
-#         # 4. Get the winning class (0, 1, or 2)
-#         predicted_index = np.argmax(final_probs)
-        
-#         # 5. Update the GUI
-#         classification_result.set(f"Class {predicted_index}")
-        
-#     except ValueError:
-#         messagebox.showerror("Input Error", "Please ensure all 5 feature inputs are valid numbers.")
-#     except NameError:
-#         messagebox.showerror("Model Error", "Please train the model first.")
+#         df = pd.read_csv('penguins.csv')
+#     except FileNotFoundError:
+#         print("Error: penguins.csv not found.")
+#         return
 
-# # Button to trigger the logic
-# classify_button = ttk.Button(classify_frame, text="Predict Class", command=on_classify_click)
-# # Place button at row 5 (since rows 0-4 are taken by inputs)
-# classify_button.grid(row=5, column=0, columnspan=2, pady=10)
+#     plot_cols = ['Species', 'CulmenLength', 'CulmenDepth', 'FlipperLength', 'BodyMass']
+#     df = df[plot_cols].dropna()
+#     print("Generating Pair Plot...")
 
-# # Result Labels
-# ttk.Label(classify_frame, text="Prediction:").grid(row=6, column=0, padx=10, pady=5, sticky="w")
-# ttk.Label(classify_frame, textvariable=classification_result, foreground="blue", font=("Arial", 10, "bold")).grid(row=6, column=1, padx=10, pady=5, sticky="w")
+#     sns.set_style("whitegrid")
+#     g = sns.pairplot(df, hue='Species', markers=["o", "s", "D"], palette="bright")
+#     g.fig.suptitle("Feature Pairwise Relationships (Look for Gaps)", y=1.02)
+#     plt.show()
+
+#     print("Generating Focused Plot...")
+#     plt.figure(figsize=(10, 6))
+#     sns.scatterplot(
+#         data=df, 
+#         x='CulmenLength', 
+#         y='FlipperLength', 
+#         hue='Species', 
+#         style='Species', 
+#         s=100,
+#         palette="deep"
+#     )
+#     plt.title("Can you draw straight lines between the colors?", fontsize=14)
+#     plt.xlabel("Culmen Length (mm)")
+#     plt.ylabel("Flipper Length (mm)")
+#     plt.grid(True, alpha=0.3)
+#     plt.show()
+
+if __name__ == "__main__":
+    #visualize_separability()
+    run_grid_search_and_plot()

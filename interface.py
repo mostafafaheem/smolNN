@@ -2,10 +2,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
 import task_2
+#import matplotlib.pyplot as plt
+#from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
+#globals
 trained_model = None
-scaler_stats = {} #to hold mean, std, and indices for scaling new samples
+scaler_stats = {}
 saved_cat_mappings = {}
+global_X_test = None
+global_y_test = None
 
 root = tk.Tk()
 root.title("Backpropagation Algorithm")
@@ -48,7 +53,7 @@ activation_menu = ttk.OptionMenu(hyper_parameters_frame, activation_var, "sigmoi
 activation_menu.grid(row=5, column=1, padx=10, pady=5, sticky="ew")
 
 def on_train_click():
-    global trained_model, scaler_stats, saved_cat_mappings
+    global trained_model, scaler_stats, saved_cat_mappings, global_X_test, global_y_test
     
     try:
         #parsing inputs
@@ -68,11 +73,12 @@ def on_train_click():
         #scaling
         X_train, X_test, num_indices, mean, std = task_2.scale_data(X_train, X_test)
         scaler_stats = {'indices': num_indices, 'mean': mean, 'std': std}
-
+        global_X_test = X_test
+        global_y_test = y_test
         #model initialization
         input_size = X_train.shape[1]
         output_size = y_train.shape[1]
-        #construct layer list
+        #layer list construction
         layer_architecture = [input_size] + neurons + [output_size]
         
         trained_model = task_2.NeuralNetwork(
@@ -95,6 +101,42 @@ def on_train_click():
     except Exception as e:
         messagebox.showerror("Error", str(e))
 
+#confusion matrix
+def on_show_cm_click():
+    if trained_model is None:
+        messagebox.showerror("Error", "Please train the model first.")
+        return
+    #checker
+    if global_X_test is None or global_y_test is None:
+        messagebox.showerror("Error", "Test data not found. Train the model again.")
+        return
+
+    try:
+        y_pred = trained_model.predict(global_X_test)
+        #to convert true labels (if One-Hot)
+        if global_y_test.ndim > 1 and global_y_test.shape[1] > 1:
+            y_true = np.argmax(global_y_test, axis=1)
+        else:
+            y_true = global_y_test
+
+        #from scratch confusion matrix
+        cm, classes_found = task_2.confusion_matrix_manual(y_true, y_pred)
+
+        if 'Species' in saved_cat_mappings:
+            species_names = saved_cat_mappings['Species'].tolist()
+        else:
+            species_names = ["Class 0", "Class 1", "Class 2"]
+
+        task_2.plot_manual_cm_graphic(
+            cm, 
+            classes_found, 
+            "Confusion Matrix (Manual)", 
+            class_names_map=species_names
+        )
+
+    except Exception as e:
+        messagebox.showerror("Plot Error", str(e))
+
 run_button = ttk.Button(hyper_parameters_frame, text="Start Training", command=on_train_click)
 run_button.grid(row=6, column=0, columnspan=2, pady=20, sticky="ew")
 
@@ -110,7 +152,9 @@ ttk.Label(model_evaluation, text="Training Accuracy:").grid(row=0, column=0, pad
 ttk.Label(model_evaluation, textvariable=Training_result, foreground="blue").grid(row=0, column=1, padx=10, pady=5, sticky="w")
 ttk.Label(model_evaluation, text="Testing Accuracy:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
 ttk.Label(model_evaluation, textvariable=testing_result, foreground="blue").grid(row=1, column=1, padx=10, pady=5, sticky="w")
-cm_button = ttk.Button(model_evaluation, text="Show Confusion Matrix", command=lambda: print("Add plot code here")) 
+#cm_button = ttk.Button(model_evaluation, text="Show Confusion Matrix", command=lambda: print("Add plot code here")) 
+#cm_button.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
+cm_button = ttk.Button(model_evaluation, text="Show Confusion Matrix", command=on_show_cm_click)
 cm_button.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
 
 
@@ -124,9 +168,8 @@ feature_entry_widgets = []
 for i, name in enumerate(feature_names):
     ttk.Label(classify_frame, text=f"{name}:").grid(row=i, column=0, padx=10, pady=5, sticky="w")
     if name == "Origin_Location":
-        #dropdown
         entry = ttk.Combobox(classify_frame, values=origin_options, state="readonly")
-        entry.current(0) # Default to "Biscoe" (the first item)
+        entry.current(0) #default "Biscoe" (the first item)
     else:
         entry = ttk.Entry(classify_frame)
         entry.insert(0, "0.0")
@@ -142,64 +185,45 @@ def on_classify_click():
         return
 
     try:
-        # --- 1. GET RAW INPUTS SEPARATELY ---
-        # We cannot use a loop because data types are different
+        raw_L = float(feature_entry_widgets[0].get()) # CulmenLength
+        raw_D = float(feature_entry_widgets[1].get()) # CulmenDepth
+        raw_F = float(feature_entry_widgets[2].get()) # FlipperLength
+        raw_M = float(feature_entry_widgets[3].get()) # BodyMass
         
-        # Widgets 0, 1, 2, 3 are Numbers (Float)
-        raw_L = float(feature_entry_widgets[0].get()) # Culmen Length
-        raw_D = float(feature_entry_widgets[1].get()) # Culmen Depth
-        raw_F = float(feature_entry_widgets[2].get()) # Flipper Length
-        raw_M = float(feature_entry_widgets[3].get()) # Body Mass
-        
-        # Widget 4 is Text (String) - DO NOT convert to float
-        raw_Origin = feature_entry_widgets[4].get()   # Origin Location
-
-        # --- 2. SCALE NUMERICAL DATA ---
-        # Retrieve stats from training
+        #text (string) 
+        raw_Origin = feature_entry_widgets[4].get()   #OriginLocation
         mean = scaler_stats['mean'] 
         std = scaler_stats['std']
         
-        # Apply (x - u) / s
-        # Indices here must match the order of columns in your backend X_train
+        #(x - u) / s
+        #for the indices to match the order of columns in backend X_train
         scaled_L = (raw_L - mean[0]) / std[0]
         scaled_D = (raw_D - mean[1]) / std[1]
         scaled_F = (raw_F - mean[2]) / std[2]
         scaled_M = (raw_M - mean[3]) / std[3]
 
-        # --- 3. ENCODE CATEGORICAL DATA ---
-        # Retrieve the list of origins found during training (e.g. ['Biscoe', 'Dream', 'Torgersen'])
-        # This ensures we match the exact One-Hot order the model learned
+
+        #match the exact One-Hot order the model learned
         if 'OriginLocation' not in saved_cat_mappings:
              raise ValueError("Mapping missing. Did you restart without training?")
              
         origin_order = saved_cat_mappings['OriginLocation']
-        
-        # Create a vector of zeros (e.g., [0, 0, 0])
         origin_one_hot = [0] * len(origin_order)
         
-        # Find which index matches the user's choice and flip it to 1
         if raw_Origin in origin_order:
-            # list() is needed if origin_order is a numpy array
             idx = list(origin_order).index(raw_Origin)
             origin_one_hot[idx] = 1
         else:
-            # If for some reason the dropdown has a value not in training data
+            #if for some reason the dropdown has a value not in training data
             messagebox.showwarning("Warning", f"Location '{raw_Origin}' was never seen during training.")
 
-        # --- 4. ASSEMBLE FINAL VECTOR ---
-        # Combine [Scaled Numbers] + [One Hot Vector]
+        #combining [Scaled Numbers] + [One Hot Vector]
         final_input_list = [scaled_L, scaled_D, scaled_F, scaled_M] + origin_one_hot
-        
-        # Reshape for the network
         sample_vector = np.array(final_input_list).reshape(1, -1)
-
-        # --- 5. PREDICT ---
         activations = trained_model.forward(sample_vector)
         final_probs = activations[-1]
         predicted_index = np.argmax(final_probs)
         
-        # Get Class Name
-        # Use the 'Species' mapping from backend if available, else hardcode
         if 'Species' in saved_cat_mappings:
             species_list = saved_cat_mappings['Species']
             result_text = species_list[predicted_index]
