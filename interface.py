@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import numpy as np
-import task_2
+import nn
 
 # import matplotlib.pyplot as plt
 # from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
@@ -14,7 +14,7 @@ global_X_test = None
 global_y_test = None
 
 root = tk.Tk()
-root.title("Backpropagation Algorithm")
+root.title("smolNN GUI")
 root.geometry("950x650")
 
 root.columnconfigure(0, weight=1)
@@ -85,10 +85,10 @@ def on_train_click():
             )
 
         # processing data
-        X_train, X_test, y_train, y_test, mappings = task_2.load_and_preprocess_data()
+        X_train, X_test, y_train, y_test, mappings = nn.load_and_preprocess_data()
         saved_cat_mappings = mappings
         # scaling
-        X_train, X_test, num_indices, mean, std = task_2.scale_data(X_train, X_test)
+        X_train, X_test, num_indices, mean, std = nn.scale_data(X_train, X_test)
         scaler_stats = {"indices": num_indices, "mean": mean, "std": std}
         global_X_test = X_test
         global_y_test = y_test
@@ -98,7 +98,7 @@ def on_train_click():
         # layer list construction
         layer_architecture = [input_size] + neurons + [output_size]
 
-        trained_model = task_2.NeuralNetwork(
+        trained_model = nn.NeuralNetwork(
             layers=layer_architecture,
             learning_rate=lr,
             use_bias=use_bias,
@@ -138,14 +138,14 @@ def on_show_cm_click():
             y_true = global_y_test
 
         # from scratch confusion matrix
-        cm, classes_found = task_2.confusion_matrix_manual(y_true, y_pred)
+        cm, classes_found = nn.confusion_matrix_manual(y_true, y_pred)
 
         if "Species" in saved_cat_mappings:
             species_names = saved_cat_mappings["Species"].tolist()
         else:
             species_names = ["Class 0", "Class 1", "Class 2"]
 
-        task_2.plot_manual_cm_graphic(
+        nn.plot_manual_cm_graphic(
             cm,
             classes_found,
             "Confusion Matrix (Manual)",
