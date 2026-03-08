@@ -4,6 +4,14 @@ from sklearn.model_selection import train_test_split
 import itertools
 import matplotlib.pyplot as plt
 import seaborn as sns
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
 class NeuralNetwork:
@@ -80,7 +88,8 @@ class NeuralNetwork:
 
     # stochastic gradient descent (anxious)
     def train_sgd(self, X, y, epochs, print_every=100):
-        print(f"\nTraining for {epochs} epochs (SGD)...")
+        hidden_sizes = self.layers[1:-1]
+        logger.info(f"Training (SGD) | Epochs: {epochs} | LR: {self.learning_rate} | Layers: {hidden_sizes}")
 
         for epoch in range(epochs):
             total_loss = 0
@@ -113,12 +122,12 @@ class NeuralNetwork:
 
             if (epoch + 1) % print_every == 0:
                 avg_loss = total_loss / len(X)
-                print(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
+                logger.info(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
 
     # batch (patient)
     def train_bgd(self, X, y, epochs, print_every=100):
-
-        print(f"\nTraining for {epochs} epochs (BGD)...")
+        hidden_sizes = self.layers[1:-1]
+        logger.info(f"Training (BGD) | Epochs: {epochs} | LR: {self.learning_rate} | Layers: {hidden_sizes}")
 
         num_layers = len(self.weights)
 
@@ -162,14 +171,14 @@ class NeuralNetwork:
 
             if (epoch + 1) % print_every == 0:
                 avg_loss = total_loss / len(X)
-                print(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
+                logger.info(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
 
     # stochastic adaptive moment estimation(smart)
     def train_adam(
         self, X, y, epochs, beta1=0.9, beta2=0.999, epsilon=1e-8, print_every=100
     ):
-
-        print(f"\nTraining for {epochs} epochs using Adam...")
+        hidden_sizes = self.layers[1:-1]
+        logger.info(f"Training (Adam) | Epochs: {epochs} | LR: {self.learning_rate} | Layers: {hidden_sizes}")
 
         num_layers = len(self.weights)
 
@@ -238,7 +247,7 @@ class NeuralNetwork:
 
             if (epoch + 1) % print_every == 0:
                 avg_loss = total_loss / len(X)
-                print(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
+                logger.info(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
 
     def predict(self, X):
         predictions = []
@@ -368,7 +377,7 @@ def plot_manual_cm_graphic(cm, classes, title, class_names_map=None):
 
 # gridsearch
 def run_grid_search_and_plot():
-    print("Preparing Data for Grid Search...")
+    logger.info("Preparing Data for Grid Search...")
     X_train, X_test, y_train, y_test, mappings = load_and_preprocess_data()
     species_names = mappings["Species"].tolist()
     X_train, X_test, _, _, _ = scale_data(X_train, X_test)
@@ -381,12 +390,12 @@ def run_grid_search_and_plot():
     hidden_layers_configs = [[5], [8], [5, 4], [8, 8]]
     best_results = []
 
-    print(f"{'='*60}")
-    print(f"STARTING GRID SEARCH")
-    print(f"{'='*60}")
+    logger.info(f"{'='*60}")
+    logger.info(f"STARTING GRID SEARCH")
+    logger.info(f"{'='*60}")
 
     for act in activations:
-        print(f"\n--- Searching best parameters for: {act.upper()} ---")
+        logger.info(f"--- Searching best parameters for: {act.upper()} ---")
 
         best_acc_for_act = -1
         best_params_for_act = {}
@@ -422,8 +431,9 @@ def run_grid_search_and_plot():
                             "#Layers": len(hidden_conf),
                             "#HiddenNodes": str(hidden_conf),
                         }
+                    logger.debug(f"Finished evaluating config -> LR: {lr}, Epochs: {epochs}, Hidden: {hidden_conf}. Test Acc: {test_acc*100:.2f}%")
 
-        print(
+        logger.info(
             f"Best {act} model found. Accuracy: {best_params_for_act['Test Accuracy']}"
         )
         best_results.append(best_params_for_act)
@@ -443,11 +453,11 @@ def run_grid_search_and_plot():
             class_names_map=species_names,
         )
 
-    print(f"\n{'='*60}")
-    print("GRID SEARCH COMPLETE. BEST RESULTS:")
-    print(f"{'='*60}")
+    logger.info(f"{'='*60}")
+    logger.info("GRID SEARCH COMPLETE. BEST RESULTS:")
+    logger.info(f"{'='*60}")
     for res in best_results:
-        print(res)
+        logger.info(res)
 
     plot_results_table(best_results)
 

@@ -15,15 +15,16 @@ global_y_test = None
 
 root = tk.Tk()
 root.title("smolNN GUI")
-root.geometry("950x650")
+root.geometry("800x500")
 
 root.columnconfigure(0, weight=1)
 root.columnconfigure(1, weight=1)
 root.rowconfigure(0, weight=1)
+root.rowconfigure(1, weight=1)
 
 # hyperparameters Frame
-hyper_parameters_frame = ttk.LabelFrame(root, text="1. User Input", padding=(10, 5))
-hyper_parameters_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+hyper_parameters_frame = ttk.LabelFrame(root, text="Hyperparameters", padding=(10, 5))
+hyper_parameters_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=10, sticky="nsew")
 
 ttk.Label(hyper_parameters_frame, text="Number of hidden layers:").grid(
     row=0, column=0, padx=10, pady=5, sticky="w"
@@ -67,6 +68,15 @@ activation_menu = ttk.OptionMenu(
 )
 activation_menu.grid(row=5, column=1, padx=10, pady=5, sticky="ew")
 
+ttk.Label(hyper_parameters_frame, text="Optimizer:").grid(
+    row=6, column=0, padx=10, pady=5, sticky="w"
+)
+optimizer_var = tk.StringVar(value="Adam")
+optimizer_menu = ttk.OptionMenu(
+    hyper_parameters_frame, optimizer_var, "Adam", "Adam", "SGD", "BGD"
+)
+optimizer_menu.grid(row=6, column=1, padx=10, pady=5, sticky="ew")
+
 def on_train_click():
     global trained_model, scaler_stats, saved_cat_mappings, global_X_test, global_y_test
 
@@ -78,6 +88,7 @@ def on_train_click():
         epochs = int(epochs_entry.get())
         use_bias = bias_var.get()
         act_fn = activation_var.get()
+        optimizer = optimizer_var.get()
 
         if len(neurons) != n_layers:
             raise ValueError(
@@ -106,7 +117,13 @@ def on_train_click():
         )
 
         # train
-        trained_model.train_adam(X_train, y_train, epochs=epochs)
+        if optimizer == "Adam":
+            trained_model.train_adam(X_train, y_train, epochs=epochs)
+        elif optimizer == "SGD":
+            trained_model.train_sgd(X_train, y_train, epochs=epochs)
+        elif optimizer == "BGD":
+            trained_model.train_bgd(X_train, y_train, epochs=epochs)
+            
         # evaluate
         train_acc = trained_model.evaluate(X_train, y_train)
         test_acc = trained_model.evaluate(X_test, y_test)
@@ -159,11 +176,11 @@ def on_show_cm_click():
 run_button = ttk.Button(
     hyper_parameters_frame, text="Start Training", command=on_train_click
 )
-run_button.grid(row=6, column=0, columnspan=2, pady=20, sticky="ew")
+run_button.grid(row=7, column=0, columnspan=2, pady=20, sticky="ew")
 
 
 # model eval frame
-model_evaluation = ttk.LabelFrame(root, text="4. Model Evaluation", padding=(10, 5))
+model_evaluation = ttk.LabelFrame(root, text="Model Evaluation", padding=(10, 5))
 model_evaluation.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
 
 Training_result = tk.StringVar(value="N/A")
@@ -190,7 +207,7 @@ cm_button.grid(row=2, column=0, columnspan=2, pady=10, sticky="ew")
 
 
 # classification frame
-classify_frame = ttk.LabelFrame(root, text="5. Classify New Sample", padding=(10, 5))
+classify_frame = ttk.LabelFrame(root, text="Classify New Sample", padding=(10, 5))
 classify_frame.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
 feature_names = [
     "Culmen Length",
