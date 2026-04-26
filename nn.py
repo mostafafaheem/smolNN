@@ -173,7 +173,7 @@ class NeuralNetwork:
                 avg_loss = total_loss / len(X)
                 logger.info(f"Epoch {epoch+1}/{epochs} - Loss: {avg_loss:.4f}")
 
-    # stochastic adaptive moment estimation(smart)
+    # stochastic adaptive moment estimation(smart) -the jupyter part
     def train_adam(
         self, X, y, epochs, beta1=0.9, beta2=0.999, epsilon=1e-8, print_every=100
     ):
